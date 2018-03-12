@@ -1,0 +1,82 @@
+diff --git a/core/vm/contracts.go b/core/vm/contracts.go
+index 7344b6043..49d44510e 100644
+--- a/core/vm/contracts.go
++++ b/core/vm/contracts.go
+@@ -19,8 +19,11 @@ package vm
+ import (
+ 	"crypto/sha256"
+ 	"errors"
++	"fmt"
+ 	"math/big"
+ 
++	"github.com/ethereum/go-ethereum/crypto/saws"
++
+ 	"github.com/ethereum/go-ethereum/common"
+ 	"github.com/ethereum/go-ethereum/common/math"
+ 	"github.com/ethereum/go-ethereum/crypto"
+@@ -40,10 +43,13 @@ type PrecompiledContract interface {
+ // PrecompiledContractsHomestead contains the default set of pre-compiled Ethereum
+ // contracts used in the Frontier and Homestead releases.
+ var PrecompiledContractsHomestead = map[common.Address]PrecompiledContract{
+-	common.BytesToAddress([]byte{1}): &ecrecover{},
+-	common.BytesToAddress([]byte{2}): &sha256hash{},
+-	common.BytesToAddress([]byte{3}): &ripemd160hash{},
+-	common.BytesToAddress([]byte{4}): &dataCopy{},
++	common.BytesToAddress([]byte{1}):  &ecrecover{},
++	common.BytesToAddress([]byte{2}):  &sha256hash{},
++	common.BytesToAddress([]byte{3}):  &ripemd160hash{},
++	common.BytesToAddress([]byte{4}):  &dataCopy{},
++	common.BytesToAddress([]byte{11}): &CheckProof{},
++	common.BytesToAddress([]byte{12}): &CheckProof{},
++	common.BytesToAddress([]byte{13}): &CheckProof{},
+ }
+ 
+ // PrecompiledContractsByzantium contains the default set of pre-compiled Ethereum
+@@ -97,10 +103,46 @@ func (c *ecrecover) Run(input []byte) ([]byte, error) {
+ 		return nil, nil
+ 	}
+ 
+-	// the first byte of pubkey is bitcoin heritage
++	// the first byte of pubkey is bitcoin heritage=
+ 	return common.LeftPadBytes(crypto.Keccak256(pubKey[1:])[12:], 32), nil
+ }
+ 
++type CheckProof struct{}
++
++func (t *CheckProof) RequiredGas(input []byte) uint64 {
++	return 10
++}
++
++func (t *CheckProof) Run(input []byte) ([]byte, error) {
++	/*
++	 *	Input is expected to be in the following format.
++	 *	[PublicKey] - 393 bytes
++	 *	[QueryResponse] - 262 bytes
++	 *	[Query] -
++	 */
++
++	// if len(input) < 393+262 {
++	// return common.LeftPadBytes(nil, 32), nil
++	// }
++	fmt.Println(len(input))
++	fmt.Println(393 + 262)
++	pubkey, _ := saws.ParsePublicKey(input[:393])
++	// pubkey, _ := saws.ParsePublicKey(input)
++	fmt.Println(pubkey)
++	queryResp, _ := saws.ParseQueryResponse(input[393 : 393+259])
++	fmt.Println(queryResp)
++	queryObj, _ := saws.ParseQuery(input[393+259:])
++	fmt.Println(queryObj)
++	bs := make([]byte, 4)
++	bs[3] = byte(19)
++	bs[2] = bs[3]
++	bs[1] = bs[2]
++	bs[0] = bs[1]
++	temp := common.LeftPadBytes(bs, 32)
++	fmt.Println(temp)
++	return temp, nil
++}
++
+ // SHA256 implemented as a native contract.
+ type sha256hash struct{}
+ 

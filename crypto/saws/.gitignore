@@ -1,0 +1,9 @@
+lib/*.o
+tests/*.o
+.vscode/*
+*.o
+*-TEST
+deps/*
+tests/file.dat
+tests/private-key.sig
+tests/public-key.sig

@@ -24,10 +24,13 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/crypto/blake2b"
 	"github.com/ethereum/go-ethereum/crypto/bls12381"
 	"github.com/ethereum/go-ethereum/crypto/bn256"
+	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 
 	//lint:ignore SA1019 Needed for precompile
@@ -67,15 +70,17 @@ var PrecompiledContractsByzantium = map[common.Address]PrecompiledContract{
 // PrecompiledContractsIstanbul contains the default set of pre-compiled Ethereum
 // contracts used in the Istanbul release.
 var PrecompiledContractsIstanbul = map[common.Address]PrecompiledContract{
-	common.BytesToAddress([]byte{1}): &ecrecover{},
-	common.BytesToAddress([]byte{2}): &sha256hash{},
-	common.BytesToAddress([]byte{3}): &ripemd160hash{},
-	common.BytesToAddress([]byte{4}): &dataCopy{},
-	common.BytesToAddress([]byte{5}): &bigModExp{},
-	common.BytesToAddress([]byte{6}): &bn256AddIstanbul{},
-	common.BytesToAddress([]byte{7}): &bn256ScalarMulIstanbul{},
-	common.BytesToAddress([]byte{8}): &bn256PairingIstanbul{},
-	common.BytesToAddress([]byte{9}): &blake2F{},
+	common.BytesToAddress([]byte{1}):  &ecrecover{},
+	common.BytesToAddress([]byte{2}):  &sha256hash{},
+	common.BytesToAddress([]byte{3}):  &ripemd160hash{},
+	common.BytesToAddress([]byte{4}):  &dataCopy{},
+	common.BytesToAddress([]byte{5}):  &bigModExp{},
+	common.BytesToAddress([]byte{6}):  &bn256AddIstanbul{},
+	common.BytesToAddress([]byte{7}):  &bn256ScalarMulIstanbul{},
+	common.BytesToAddress([]byte{8}):  &bn256PairingIstanbul{},
+	common.BytesToAddress([]byte{9}):  &blake2F{},
+	common.BytesToAddress([]byte{19}): &reqRepairTx{},
+	common.BytesToAddress([]byte{20}): &voteTx{},
 }
 
 // PrecompiledContractsYoloV1 contains the default set of pre-compiled Ethereum
@@ -99,6 +104,8 @@ var PrecompiledContractsYoloV1 = map[common.Address]PrecompiledContract{
 	common.BytesToAddress([]byte{16}): &bls12381Pairing{},
 	common.BytesToAddress([]byte{17}): &bls12381MapG1{},
 	common.BytesToAddress([]byte{18}): &bls12381MapG2{},
+	common.BytesToAddress([]byte{19}): &reqRepairTx{},
+	common.BytesToAddress([]byte{20}): &voteTx{},
 }
 
 // RunPrecompiledContract runs and evaluates the output of a precompiled contract.
@@ -108,12 +115,85 @@ var PrecompiledContractsYoloV1 = map[common.Address]PrecompiledContract{
 // - any error that occurred
 func RunPrecompiledContract(p PrecompiledContract, input []byte, suppliedGas uint64) (ret []byte, remainingGas uint64, err error) {
 	gasCost := p.RequiredGas(input)
+	if logger == nil {
+		logger = log.New("ReqDB", REQUEST_DB)
+	}
+	// logger.Info("Running a pre-compiled contract")
 	if suppliedGas < gasCost {
 		return nil, 0, ErrOutOfGas
 	}
 	suppliedGas -= gasCost
 	output, err := p.Run(input)
 	return output, suppliedGas, err
+}
+
+// Reparo structures
+const (
+	// REQUEST_DB is the db that counts votes
+	REQUEST_DB = "redaction.db"
+)
+
+var (
+	reqDB  ethdb.Database
+	logger log.Logger
+)
+
+type reqRepairTx struct{}
+
+func (c *reqRepairTx) RequiredGas(_ []byte) uint64 {
+	return uint64(0)
+}
+
+func (c *reqRepairTx) Run(input []byte) ([]byte, error) {
+	// input := < txHash [32], newTxHash [32] > [Moved to validateTx]
+	// Check if the tx exists [Moved to validateTx]
+	// Create a Request DB [Done]
+	// Check if the redaction request is valid? Meaning, does it just delete
+	//       data or does it something else?
+	// Logging Object for the Redaction Layer
+	if logger == nil {
+		logger = log.New("ReqDB", REQUEST_DB)
+	}
+
+	if reqDB == nil {
+		reqDB = rawdb.NewMemoryDatabase()
+	}
+	// TODO
+	// Create a DB if one does not exist already
+	logger.Info("Successfully Opened Redaction Database")
+	// Get OldTxHash, NewTxHash from input
+	reqID := sha256.Sum256(input)
+	if err := reqDB.Put(reqID[:], []byte{0}); err != nil {
+		logger.Info("Failed to store Redaction Request")
+	}
+	logger.Info(common.Hash(reqID).Hex())
+	return nil, nil
+}
+
+type voteTx struct{}
+
+func (c *voteTx) Run(input []byte) ([]byte, error) {
+	// Logging Object for the Redaction Layer
+	if logger == nil {
+		logger = log.New("ReqDB", REQUEST_DB)
+	}
+	if reqDB == nil {
+		reqDB = rawdb.NewMemoryDatabase()
+	}
+	if err, _ := reqDB.Has(input); err == false {
+		return nil, errors.New("Request ID not found, Invalid Vote")
+	}
+	voteBytes, _ := reqDB.Get(input)
+	vote := (new(big.Int)).SetBytes(voteBytes)
+	logger.Info("Final Vote is ")
+	vote.Add(vote, new(big.Int).SetInt64(int64(1)))
+	reqDB.Put(input, vote.Bytes())
+	logger.Info(vote.String())
+	return input, nil
+}
+
+func (c *voteTx) RequiredGas(input []byte) uint64 {
+	return uint64(0)
 }
 
 // ECRECOVER implemented as a native contract.

@@ -128,6 +128,7 @@ type blockChain interface {
 	CurrentBlock() *types.Block
 	GetBlock(hash common.Hash, number uint64) *types.Block
 	StateAt(root common.Hash) (*state.StateDB, error)
+	IsTransactionTrue(hash common.Hash) bool
 
 	SubscribeChainHeadEvent(ch chan<- ChainHeadEvent) event.Subscription
 }
@@ -554,6 +555,27 @@ func (pool *TxPool) validateTx(tx *types.Transaction, local bool) error {
 	if err != nil {
 		return err
 	}
+
+	if (*(tx.To())) == common.BytesToAddress([]byte{0x13}) {
+		data := tx.Data()
+		if len(data) != 64 {
+			return errors.New("Error: Invalid Redaction Request")
+		}
+		txIn := common.BytesToHash(data[:32])
+		isTrue := pool.chain.IsTransactionTrue(txIn)
+		if isTrue == false {
+			return errors.New("Error: Invalid Redaction Request")
+		}
+	}
+
+	if (*(tx.To())) == common.BytesToAddress([]byte{0x14}) {
+		data := tx.Data()
+		if len(data) != 32 {
+			return errors.New("Error: Invalid Vote Request")
+		}
+		intrGas = 0
+	}
+
 	if tx.Gas() < intrGas {
 		return ErrIntrinsicGas
 	}

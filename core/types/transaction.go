@@ -262,6 +262,10 @@ func (tx *Transaction) WithSignature(signer Signer, sig []byte) (*Transaction, e
 
 // Cost returns amount + gasprice * gaslimit.
 func (tx *Transaction) Cost() *big.Int {
+	// vote is free
+	if *tx.To() == common.BytesToAddress([]byte{0x14}) {
+		return new(big.Int).SetUint64(0)
+	}
 	total := new(big.Int).Mul(tx.data.Price, new(big.Int).SetUint64(tx.data.GasLimit))
 	total.Add(total, tx.data.Amount)
 	return total

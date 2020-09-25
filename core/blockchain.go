@@ -363,6 +363,15 @@ func NewBlockChain(db ethdb.Database, cacheConfig *CacheConfig, chainConfig *par
 	return bc, nil
 }
 
+// IsTransactionTrue returns whether a transaction exists in the chain
+func (bc *BlockChain) IsTransactionTrue(hash common.Hash) bool {
+	tx, _, _, _ := rawdb.ReadTransaction(bc.db, hash)
+	if tx == nil {
+		return false
+	}
+	return true
+}
+
 // GetVMConfig returns the block chain VM config.
 func (bc *BlockChain) GetVMConfig() *vm.Config {
 	return &bc.vmConfig
